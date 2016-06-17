@@ -1,6 +1,6 @@
 import logging
 import endpoints
-from protorpc import remote, messages, message_types
+from protorpc import remote, messages
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.ext import ndb
@@ -8,7 +8,7 @@ from google.appengine.ext import ndb
 from models import User, Game, Board
 from models import StringMessage, BoardForm, NewGameForm, InsertShipForm, \
     MakeGuessForm, CoordsForm, PlayerStatsForm, PlayersStatsForm, \
-    GetCoordsForm, ActiveGamesForm
+    GetCoordsForm, ActiveGamesForm, GameForm
 
 from utils import get_by_urlsafe, get_by_players
 
@@ -64,8 +64,8 @@ class BattleshipApi(remote.Service):
         return StringMessage(message='Welcome, {}'.format(request.name))
 
     @endpoints.method(request_message=NEW_GAME_REQUEST,
-                      response_message=StringMessage,
-                      path='game',
+                      response_message=GameForm,
+                      path='game/new',
                       name='new_game',
                       http_method='POST')
     def new_game(self, request):
@@ -80,7 +80,7 @@ class BattleshipApi(remote.Service):
                                     Game.player_2 == p2.key))
         check = check.filter(Game.game_over == False).get()
         if check:
-            return StringMessage(message='These players already have \
+            raise endpoints.BadRequestException('These players already have \
                                           an active game!')
 
         try:
@@ -104,7 +104,8 @@ class BattleshipApi(remote.Service):
         p2_board.urlsafe_game_key = urlsafe_game_key
         p2_board.put()
 
-        return StringMessage(message='The game is afoot!')
+        taskqueue.add(url='/tasks/updateactivegames')
+        return game.to_form(message='The game is afoot!')
 
     @endpoints.method(request_message=MAKE_GUESS_REQUEST,
                       response_message=BoardForm,
@@ -134,7 +135,7 @@ class BattleshipApi(remote.Service):
         miss_coords = board.giveCoords('miss')
         hit_coords = board.giveCoords('hit')
 
-        guess_coord = (request.guess_x, request.guess_y)
+        guess_coord = [request.guess_x, request.guess_y]
 
         # verifies guess is within board
         inBounds = True
@@ -201,10 +202,10 @@ class BattleshipApi(remote.Service):
         new_ship = []
         new_ship.append((request.start_x, request.start_y))
         if request.horizontal:
-            for i in range(1, request.length+1):
+            for i in range(1, request.length):
                 new_ship.append((request.start_x + i, request.start_y))
         if not request.horizontal:
-            for i in range(1, request.length+1):
+            for i in range(1, request.length):
                 new_ship.append((request.start_x, request.start_y+i))
 
         existing_ship_coords = board.giveCoords('ship')
@@ -227,6 +228,7 @@ class BattleshipApi(remote.Service):
                                      Try again!')
 
         board.ship_coord = [('{}_{}').format(*coord) for coord in new_ship]
+        board.put()
 
         return board.to_form(message='Ship added successfully!')
 
@@ -243,7 +245,7 @@ class BattleshipApi(remote.Service):
         return player.to_form()
 
     @endpoints.method(response_message=PlayersStatsForm,
-                      path='/player',
+                      path='player',
                       name='players_stats',
                       http_method='GET')
     def players_stats(self, request):
@@ -252,16 +254,27 @@ class BattleshipApi(remote.Service):
 
     @endpoints.method(request_message=SHIP_COORDS_REQUEST,
                       response_message=CoordsForm,
-                      path='/board/coords',
+                      path='board/coords',
                       name='get_ship_coords',
-                      http_method='GET')
+                      http_method='PUT')
     def get_ship_coords(self, request):
         '''Given a player and opponent name, returns the player's
         list of ships on the game board'''
         player = User.query(User.user_name == request.player_name).get()
         opponent = User.query(User.user_name == request.opponent_name).get()
         board = get_by_players(player.key, opponent.key, 'Board')
-        return board.coordsToForm('ship')
+        return CoordsForm(coord=[coord for coord in board.ship_coord])
+
+    @staticmethod
+    def _cache_gameCount():
+        '''Populates memcount with a number of active games'''
+        games = Game.query(Game.game_over == False).fetch()
+        if games:
+            count = len(games)
+        else:
+            count = 0
+        memcache.set('ACTIVE_GAMES',
+                     'There are {} game in play right now.'.format(count))
 
 
 api = endpoints.api_server([BattleshipApi])

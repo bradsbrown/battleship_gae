@@ -1,5 +1,3 @@
-import random
-from datetime import date
 from protorpc import messages
 from google.appengine.ext import ndb
 
@@ -67,7 +65,7 @@ class Board(ndb.Model):
     def to_form(self, message=''):
         '''Returns board data in BoardForm'''
         form = BoardForm()
-        form.urlsafe_key = self.key.urlsafe()
+        form.urlsafe_key = self.urlsafe_game_key
         form.hits = len(self.hit_coord)
         form.misses = len(self.miss_coord)
 
@@ -80,27 +78,23 @@ class Board(ndb.Model):
 
     def giveCoords(self, nature):
         if nature == 'ship':
-            q = ndb.get_multi(self.ship_coord)
+            q = self.ship_coord
         elif nature == 'hit':
-            q = ndb.get_multi(self.hit_coord)
+            q = self.hit_coord
         elif nature == 'miss':
-            q = ndb.get_multi(self.miss_coord)
+            q = self.miss_coord
         coords = []
         for item in q:
             x = int(item.split('_')[0])
             y = int(item.split('_')[1])
-            coord = (x, y)
+            coord = [x, y]
             coords.append(coord)
 
         return coords
 
     def coordsToForm(self, nature):
         coords = self.giveCoords(nature)
-        form = CoordsForm()
-        form.coord = [coord for coord in coords]
-
-        return form
-
+        return CoordsForm(coord=[coord for coord in coords])
 
 
 class BoardForm(messages.Message):

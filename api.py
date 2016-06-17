@@ -1,4 +1,3 @@
-import logging
 import endpoints
 from protorpc import remote, messages
 from google.appengine.api import memcache
@@ -6,13 +5,26 @@ from google.appengine.api import taskqueue
 from google.appengine.ext import ndb
 
 from models import User, Game, Board
-from models import StringMessage, BoardForm, NewGameForm, InsertShipForm, \
-    MakeGuessForm, CoordsForm, PlayerStatsForm, PlayersStatsForm, \
-    GetCoordsForm, ActiveGamesForm, GameForm
+from models import (
+    StringMessage,
+    BoardForm,
+    NewGameForm,
+    InsertShipForm,
+    MakeGuessForm,
+    CoordsForm,
+    PlayerStatsForm,
+    PlayersStatsForm,
+    GetCoordsForm,
+    ActiveGamesForm,
+    GameForm,
+    GameHistoryForm)
 
 from utils import get_by_urlsafe, get_by_players
 
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm)
+
+CANCEL_GAME_REQUEST = endpoints.ResourceContainer(
+                        urlsafe_game_key=messages.StringField(1),)
 
 GET_GAME_REQUEST = endpoints.ResourceContainer(
                         urlsafe_game_key=messages.StringField(1),)
@@ -30,7 +42,12 @@ NEW_USER = endpoints.ResourceContainer(name=messages.StringField(1),
 PLAYER_REQUEST = endpoints.ResourceContainer(
                         user_name=messages.StringField(1))
 
-SHIP_COORDS_REQUEST = endpoints.ResourceContainer(GetCoordsForm,)
+SHIP_COORDS_REQUEST = endpoints.ResourceContainer(
+                        player_name=messages.StringField(1),
+                        opponent_name=messages.StringField(2))
+
+GAME_HISTORY_REQUEST = endpoints.ResourceContainer(
+                        urlsafe_game_key=messages.StringField(1),)
 
 GRID_SIZE = 10
 
@@ -107,6 +124,19 @@ class BattleshipApi(remote.Service):
         taskqueue.add(url='/tasks/updateactivegames')
         return game.to_form(message='The game is afoot!')
 
+    @endpoints.method(request_message=CANCEL_GAME_REQUEST,
+                      response_message=StringMessage,
+                      path'game/{urlsafe_game_key}/cancel',
+                      name='cancel_game',
+                      http_method='POST')
+    def cancel_game(self, request):
+        game = get_by_urlsafe(urlsafe_game_key)
+        game.game_over = True
+        game.winner = 'CANCELED'
+        game.put()
+        return StringMessage(message="Game "
+                             "{} is canceled".format(urlsafe_game_key))
+
     @endpoints.method(request_message=MAKE_GUESS_REQUEST,
                       response_message=BoardForm,
                       path='game/{urlsafe_game_key}',
@@ -127,9 +157,9 @@ class BattleshipApi(remote.Service):
             return board.to_form(message="It's not your turn yet!")
 
         if game.game_over:
-            winner = game.winner.get()
-            return board.to_form(message='Game already over, \
-                                {} won!'.format(winner.user_name))
+            winner = game.winner
+            return board.to_form(message='Game already over,'
+                                 '{} won!'.format(winner))
 
         ship_coords = board.giveCoords('ship')
         miss_coords = board.giveCoords('miss')
@@ -138,17 +168,13 @@ class BattleshipApi(remote.Service):
         guess_coord = [request.guess_x, request.guess_y]
 
         # verifies guess is within board
-        inBounds = True
-        if guess_coord[0] > GRID_SIZE or guess_coord[1] > GRID_SIZE:
-            inBounds = False
-        if guess_coord[0] < 1 or guess_coord[1] < 1:
-            inBounds = False
-        if not inBounds:
-            return board.to_form(message='Guess was off the board!')
+        if not set(guess_coord).issubset(set(range(1, GRID_SIZE + 1))):
+            raise endpoints.BadRequestException("Guess outside of board range")
 
         # checks if the guess has already been entered
         if guess_coord in miss_coords or guess_coord in hit_coords:
-            return board.to_form(message="You've already guessed those coordinates!")
+            return board.to_form(message="You've already guessed"
+                                         "those coordinates!")
 
         # if guess is novel, checks for a hit
         if guess_coord in ship_coords:
@@ -159,8 +185,10 @@ class BattleshipApi(remote.Service):
             # in a hit, checks if all ship cells are hit, announces win if so
             if len(ship_coords) == len(hit_coords):
                 game.game_over = True
-                game.winner = request.urlsafe_player_key
+                game.winner = player.user_name
                 game.put()
+
+                game.insert_move(player.user_name, guess_coord, 'Win!')
 
                 player.games_won = player.games_won + 1
                 player.games_played = player.games_played + 1
@@ -173,6 +201,7 @@ class BattleshipApi(remote.Service):
             # if not the final hit, notifies user
             game.next_player = opponent.key
             game.put()
+            game.insert_move(player.user_name, guess_coord, 'Hit!')
             return board.to_form('A hit! Keep going!')
 
         board.miss_coord = ['{}_{}'.format(*guess_coord)]
@@ -180,6 +209,7 @@ class BattleshipApi(remote.Service):
 
         game.next_player = opponent.key
         game.put()
+        game.insert_move(player.user_name, guess_coord, 'Miss!')
         return board.to_form('Sorry, you missed!')
 
     @endpoints.method(request_message=INSERT_SHIP_REQUEST,
@@ -246,17 +276,19 @@ class BattleshipApi(remote.Service):
 
     @endpoints.method(response_message=PlayersStatsForm,
                       path='player',
-                      name='players_stats',
+                      name='get_user_rankings',
                       http_method='GET')
-    def players_stats(self, request):
+    def get_user_rankings(self, request):
         '''returns player stat info for all players'''
-        return PlayersStatsForm(players=[player.to_form() for player in User.query()])
+        players = User.query().order(User.win_pctg)
+        return PlayersStatsForm(players=[player.to_form()
+                                         for player in players])
 
     @endpoints.method(request_message=SHIP_COORDS_REQUEST,
                       response_message=CoordsForm,
-                      path='board/coords',
+                      path='board/{player_name}/{opponent_name}/coords',
                       name='get_ship_coords',
-                      http_method='PUT')
+                      http_method='GET')
     def get_ship_coords(self, request):
         '''Given a player and opponent name, returns the player's
         list of ships on the game board'''
@@ -264,6 +296,28 @@ class BattleshipApi(remote.Service):
         opponent = User.query(User.user_name == request.opponent_name).get()
         board = get_by_players(player.key, opponent.key, 'Board')
         return CoordsForm(coord=[coord for coord in board.ship_coord])
+
+    @endpoints.method(request_message=GAME_HISTORY_REQUEST,
+                      response_message=GameHistoryForm,
+                      path='game/{urlsafe_game_key}/history',
+                      name='get_game_history',
+                      http_method='GET')
+    def get_game_history(self, request):
+        '''Returns a list of moves made in game, with player and result'''
+        game = get_by_urlsafe(urlsafe_game_key)
+        return GameHistoryForm(items=[move for move in game.moves])
+
+    @endpoints.method(request_message=GET_USER_GAMES_REQUEST,
+                      response_message=ActiveGamesForm,
+                      path='player/{player_name}/games',
+                      name='get_user_games',
+                      http_method='GET')
+    def get_user_games(self, request):
+        '''Returns a list of data for all a player's in-progress games'''
+        games = Game.query(ndb.OR(Game.player_1 == player_name,
+                                  Game.player_2 == player_name))
+        games = games.filter(Game.game_over == False).fetch()
+        return ActiveGamesForm(items=[game.to_form() for game in games])
 
     @staticmethod
     def _cache_gameCount():

@@ -12,7 +12,22 @@
 
 
 ## Game Description
-Battleship is a standard game played on a 10x10 grid, where each user sets up ships on their own board, then tries to guess the locations of their opponent's ships. Each guess contains an 'x' coordinate and a 'y' coordinate, corresponding to the left/right and up/down position on the board, respecitvely. Cell x1/y1 is the top left cell of the grid, 10/10 is the botttom right, 10/1 is the top right, 1/10 the bottom left. Each guess will either be a hit, or miss, and the board tracks a running count of each, as well as unhit ship cells remaining. The game is over when one player hits all the cells on the opponent's board that contain a ship.
+Battleship is a standard game played on a 10x10 grid, where each user sets up ships on their own board, then tries to guess the locations of their opponent's ships. Each guess contains an 'x' coordinate and a 'y' coordinate, corresponding to the left/right and up/down position on the board, respectively. Cell x1/y1 is the top left cell of the grid, 10/10 is the bottom right, 10/1 is the top right, 1/10 the bottom left. Each guess will either be a hit, or miss, and the board tracks a running count of each, as well as un-hit ship cells remaining. The game is over when one player hits all the cells on the opponent's board that contain a ship.
+
+## Scoring
+Battleship does not keep an in-game 'score'. The end record of a game is simply a winner - defined by the first player to hit all cells containing the other's ships. So, while there is no in-game score, we can keep a player ranking defined by win percentage - calculated by number of wins, divided by number of games played (then multiplied by 100). Players who haven't yet played a game will be assigned a win percentage of 0 until they have played at least one game.
+
+
+## Steps to Play
+1. If users are not already registered, they will need to `create_user`.
+
+1. Then, you will start a `new_game` using the two usernames. Make sure to save the urlsafe_game_key returned when the game is created.
+
+1. Each user will `insert_ship` for each ship on the board. You should determine in your app how many ships each user should have, and define the `length:` property for them so both users have a similarly designed board with equal number of ship cells.
+
+1. Once ships are placed, users will take turns with the `make_guess` function to attempt to hit a cell on the opponent's board.
+
+1. When one user has hit all ship cells to end the game, you will be returned a GameForm with game_over = True, and a winner passed in.
 
 ## Files Included
 - **api.py**: main game engine, handles all game logic
@@ -45,11 +60,17 @@ Battleship is a standard game played on a 10x10 grid, where each user sets up sh
   - Returns: GameForm
   - Description: Checks that both users exist and aren't already in an active game together (raises an error if either is true). Then creates the game, and returns GameForm including urlsafe_game_key. Also adds a taskqueue to update the number of active games in memcache.
 
+- **cancel_game**
+  - Path: 'game/<urlsafe_game_key>/cancel'
+  - Method: POST
+  - parameters: none
+  - Returns: StringMessage confirming game is cancelled.
+
 - **make_guess**
-  - Path: 'game/<urlsafe_game_key'
+  - Path: 'game/<urlsafe_game_key>'
   - Method: PUT
   - parameters: player_name, guess_x, guess_y
-  - Checks that player has the current turn (returns GameForm with message if not), then validates the guess against the ship cells. Checks that guess is both within the board and hasn't been previosly guessed. If hit or miss, notifies player of this. If a hit ends the game, notifies player and marks game as over, updates both players' stats.
+  - Checks that player has the current turn (returns GameForm with message if not), then validates the guess against the ship cells. Checks that guess is both within the board and hasn't been previously guessed. If hit or miss, notifies player of this. If a hit ends the game, notifies player and marks game as over, updates both players' stats.
 
 - **insert_ship**
   - Path: 'board/insert_ship'
@@ -63,17 +84,29 @@ Battleship is a standard game played on a 10x10 grid, where each user sets up sh
   - parameters: none
   - Description: Returns PlayerStatsForm
 
-- **players_stats**
+- **get_user_rankings**
   - Path: 'player'
   - Method: GET
   - parameters: none
-  - Description: Returns PlayersStatsForm (includes all registered players)
+  - Description: Returns PlayersStatsForm ranking all users by win percentage
 
 - **get_ship_coords**
-  - Path:'board/coords'
-  - Method: PUT
-  - parameters: player_name, opponent_name
+  - Path:'board/<player_name>/<opponent_name>/coords'
+  - Method: GET
+  - parameters: none
   - Description: returns CoordsForm listing ship cells from player's board.
+
+- **get_game_history**
+  - Path: 'game/<urlsafe_game_key>/history'
+  - Method: GET
+  - parameters: none
+  - Description: returns a list of each player's moves and the result throughout the game.
+
+- **get_user_games**
+  - Path: 'player/<player_name>/games'
+  - Method: GET
+  - parameters: none
+  - Description: returns a list of all a player's active games.
 
 
 ## Models Included
@@ -106,5 +139,7 @@ Battleship is a standard game played on a 10x10 grid, where each user sets up sh
   - Represents player's all-time stats - name, games won, games played.
 - **PlayersStatsForm**
   - Represents player stats for all registered players.
+- **GameHistoryForm**
+  - Represents a list of moves and results for a single game.
 - **StringMessage**
   - generic text message container.

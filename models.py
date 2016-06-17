@@ -8,12 +8,15 @@ class User(ndb.Model):
     email = ndb.StringProperty()
     games_played = ndb.IntegerProperty(required=True, default=0)
     games_won = ndb.IntegerProperty(required=True, default=0)
+    win_pctg = ndb.ComputedProperty(lambda self: 0 if self.games_played == 0
+                                    else 100*(self.games_won / self.games_played))
 
     def to_form(self):
         form = PlayerStatsForm()
         form.user_name = self.user_name
         form.games_played = self.games_played
         form.games_won = self.games_won
+        form.win_pctg = self.win_pctg
 
         return form
 
@@ -25,6 +28,7 @@ class Game(ndb.Model):
     game_over = ndb.BooleanProperty(required=True, default=False)
     next_player = ndb.KeyProperty(kind='User')
     winner = ndb.StringProperty(default=None)
+    moves = ndb.StringProperty(repeated=True)
 
     @classmethod
     def new_game(cls, p1, p2):
@@ -36,6 +40,13 @@ class Game(ndb.Model):
     def end_game(self, winner):
         self.game_over = True
         self.winner = winner
+        self.put()
+
+    def insert_move(self, player_name, guess_coord, result):
+        guess_coord = '{}_{}'.format(guess_coord)
+        self.move = '[name:{}, coord:{}, result:{}]'.format(player_name,
+                                                            guess_coord,
+                                                            result)
         self.put()
 
     def to_form(self, message=''):
@@ -123,6 +134,10 @@ class GameForm(messages.Message):
     message = messages.StringField(7)
 
 
+class GameHistoryForm(messages.Message):
+    items = messages.StringField(1, repeated=True)
+
+
 class ActiveGamesForm(messages.Message):
     items = messages.MessageField(GameForm, 1, repeated=True)
 
@@ -160,6 +175,7 @@ class PlayerStatsForm(messages.Message):
     user_name = messages.StringField(1, required=True)
     games_played = messages.IntegerField(2, required=True)
     games_won = messages.IntegerField(3, required=True)
+    win_pctg = messages.FloatField(4, required=True)
 
 
 class PlayersStatsForm(messages.Message):

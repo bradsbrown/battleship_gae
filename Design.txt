@@ -1,0 +1,11 @@
+This was a challenging project in terms of laying out the overall flow of
+data through the game engine. I had to refactor the process several times,
+until I came up with a system that consistently worked, and built a
+few helper functions to simplify a few steps.
+
+I think I now have a game flow that makes sense, will work consistently,
+and should be approachable should someone actually want to build an app
+on top of the endpoints I've laid out.
+
+At the very least, I think I have a much better understanding of how to
+set up a working API system in GAE, and could do so again if necessary.

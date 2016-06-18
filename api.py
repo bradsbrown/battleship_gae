@@ -23,10 +23,7 @@ from utils import get_by_urlsafe, get_by_players
 
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm)
 
-CANCEL_GAME_REQUEST = endpoints.ResourceContainer(
-                        urlsafe_game_key=messages.StringField(1),)
-
-GET_GAME_REQUEST = endpoints.ResourceContainer(
+URLSAFE_GAME_REQUEST = endpoints.ResourceContainer(
                         urlsafe_game_key=messages.StringField(1),)
 
 MAKE_GUESS_REQUEST = endpoints.ResourceContainer(
@@ -45,9 +42,6 @@ PLAYER_REQUEST = endpoints.ResourceContainer(
 SHIP_COORDS_REQUEST = endpoints.ResourceContainer(
                         player_name=messages.StringField(1),
                         opponent_name=messages.StringField(2))
-
-GAME_HISTORY_REQUEST = endpoints.ResourceContainer(
-                        urlsafe_game_key=messages.StringField(1),)
 
 GRID_SIZE = 10
 
@@ -109,33 +103,38 @@ class BattleshipApi(remote.Service):
 
         urlsafe_game_key = game.key.urlsafe()
 
-        p1_board = Board()
-        p1_board.player = p1.key
-        p1_board.opponent = p2.key
-        p1_board.urlsafe_game_key = urlsafe_game_key
+        p1_board = Board(player=p1.key,
+                         opponent=p2.key,
+                         urlsafe_game_key=urlsafe_game_key,
+                         hit_coord=[],
+                         ship_coord=[],
+                         miss_coord=[])
         p1_board.put()
 
-        p2_board = Board()
-        p2_board.player = p2.key
-        p2_board.opponent = p1.key
-        p2_board.urlsafe_game_key = urlsafe_game_key
+        p2_board = Board(player=p2.key,
+                         opponent=p1.key,
+                         urlsafe_game_key=urlsafe_game_key,
+                         hit_coord=[],
+                         ship_coord=[],
+                         miss_coord=[])
         p2_board.put()
 
         taskqueue.add(url='/tasks/updateactivegames')
         return game.to_form(message='The game is afoot!')
 
-    @endpoints.method(request_message=CANCEL_GAME_REQUEST,
+    @endpoints.method(request_message=URLSAFE_GAME_REQUEST,
                       response_message=StringMessage,
-                      path'game/{urlsafe_game_key}/cancel',
+                      path='game/{urlsafe_game_key}/cancel',
                       name='cancel_game',
-                      http_method='POST')
+                      http_method='PUT')
     def cancel_game(self, request):
-        game = get_by_urlsafe(urlsafe_game_key)
+        '''Allows cancellation of a game before it has been won'''
+        game = get_by_urlsafe(request.urlsafe_game_key, Game)
         game.game_over = True
         game.winner = 'CANCELED'
         game.put()
         return StringMessage(message="Game "
-                             "{} is canceled".format(urlsafe_game_key))
+                             "{} is canceled".format(request.urlsafe_game_key))
 
     @endpoints.method(request_message=MAKE_GUESS_REQUEST,
                       response_message=BoardForm,
@@ -178,7 +177,7 @@ class BattleshipApi(remote.Service):
 
         # if guess is novel, checks for a hit
         if guess_coord in ship_coords:
-            board.hit_coord = ['{}_{}'.format(*guess_coord)]
+            board.hit_coord.append('{}_{}'.format(*guess_coord))
             board.put()
             hit_coords = board.giveCoords('hit')
 
@@ -188,7 +187,7 @@ class BattleshipApi(remote.Service):
                 game.winner = player.user_name
                 game.put()
 
-                game.insert_move(player.user_name, guess_coord, 'Win!')
+                game.insert_move(player.user_name, guess_coord, 'Win')
 
                 player.games_won = player.games_won + 1
                 player.games_played = player.games_played + 1
@@ -201,15 +200,15 @@ class BattleshipApi(remote.Service):
             # if not the final hit, notifies user
             game.next_player = opponent.key
             game.put()
-            game.insert_move(player.user_name, guess_coord, 'Hit!')
+            game.insert_move(player.user_name, guess_coord, 'Hit')
             return board.to_form('A hit! Keep going!')
 
-        board.miss_coord = ['{}_{}'.format(*guess_coord)]
+        board.miss_coord.append('{}_{}'.format(*guess_coord))
         board.put()
 
         game.next_player = opponent.key
         game.put()
-        game.insert_move(player.user_name, guess_coord, 'Miss!')
+        game.insert_move(player.user_name, guess_coord, 'Miss')
         return board.to_form('Sorry, you missed!')
 
     @endpoints.method(request_message=INSERT_SHIP_REQUEST,
@@ -280,7 +279,7 @@ class BattleshipApi(remote.Service):
                       http_method='GET')
     def get_user_rankings(self, request):
         '''returns player stat info for all players'''
-        players = User.query().order(User.win_pctg)
+        players = User.query().order(-User.win_pctg)
         return PlayersStatsForm(players=[player.to_form()
                                          for player in players])
 
@@ -297,25 +296,25 @@ class BattleshipApi(remote.Service):
         board = get_by_players(player.key, opponent.key, 'Board')
         return CoordsForm(coord=[coord for coord in board.ship_coord])
 
-    @endpoints.method(request_message=GAME_HISTORY_REQUEST,
+    @endpoints.method(request_message=URLSAFE_GAME_REQUEST,
                       response_message=GameHistoryForm,
                       path='game/{urlsafe_game_key}/history',
                       name='get_game_history',
                       http_method='GET')
     def get_game_history(self, request):
         '''Returns a list of moves made in game, with player and result'''
-        game = get_by_urlsafe(urlsafe_game_key)
+        game = get_by_urlsafe(request.urlsafe_game_key, Game)
         return GameHistoryForm(items=[move for move in game.moves])
 
-    @endpoints.method(request_message=GET_USER_GAMES_REQUEST,
+    @endpoints.method(request_message=PLAYER_REQUEST,
                       response_message=ActiveGamesForm,
-                      path='player/{player_name}/games',
+                      path='player/{user_name}/games',
                       name='get_user_games',
                       http_method='GET')
     def get_user_games(self, request):
         '''Returns a list of data for all a player's in-progress games'''
-        games = Game.query(ndb.OR(Game.player_1 == player_name,
-                                  Game.player_2 == player_name))
+        games = Game.query(ndb.OR(Game.player_1 == request.user_name,
+                                  Game.player_2 == request.user_name))
         games = games.filter(Game.game_over == False).fetch()
         return ActiveGamesForm(items=[game.to_form() for game in games])
 

@@ -1,4 +1,4 @@
 cron:
 - description: Send a reminder email to next user to play.
   url: /crons/send_reminder
-  schedule: every 6 hours
+  schedule: every day 15:00

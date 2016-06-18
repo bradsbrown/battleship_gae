@@ -9,7 +9,8 @@ class User(ndb.Model):
     games_played = ndb.IntegerProperty(required=True, default=0)
     games_won = ndb.IntegerProperty(required=True, default=0)
     win_pctg = ndb.ComputedProperty(lambda self: 0 if self.games_played == 0
-                                    else 100*(self.games_won / self.games_played))
+                                    else
+                                    int(100*(self.games_won/self.games_played)))
 
     def to_form(self):
         form = PlayerStatsForm()
@@ -33,7 +34,10 @@ class Game(ndb.Model):
     @classmethod
     def new_game(cls, p1, p2):
         '''Initiates new game'''
-        game = Game(player_1=p1, player_2=p2, next_player=p1)
+        game = Game(player_1=p1,
+                    player_2=p2,
+                    next_player=p1,
+                    moves=[])
         game.put()
         return game
 
@@ -43,10 +47,10 @@ class Game(ndb.Model):
         self.put()
 
     def insert_move(self, player_name, guess_coord, result):
-        guess_coord = '{}_{}'.format(guess_coord)
-        self.move = '[name:{}, coord:{}, result:{}]'.format(player_name,
-                                                            guess_coord,
-                                                            result)
+        guess = '{}_{}'.format(*guess_coord)
+        self.moves.append('name-{}.coord-{}.result-{}'.format(player_name,
+                                                              guess,
+                                                              result))
         self.put()
 
     def to_form(self, message=''):
@@ -175,7 +179,7 @@ class PlayerStatsForm(messages.Message):
     user_name = messages.StringField(1, required=True)
     games_played = messages.IntegerField(2, required=True)
     games_won = messages.IntegerField(3, required=True)
-    win_pctg = messages.FloatField(4, required=True)
+    win_pctg = messages.IntegerField(4, required=True)
 
 
 class PlayersStatsForm(messages.Message):

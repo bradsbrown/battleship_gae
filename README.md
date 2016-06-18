@@ -62,7 +62,7 @@ Battleship does not keep an in-game 'score'. The end record of a game is simply 
 
 - **cancel_game**
   - Path: 'game/<urlsafe_game_key>/cancel'
-  - Method: POST
+  - Method: PUT
   - parameters: none
   - Returns: StringMessage confirming game is cancelled.
 

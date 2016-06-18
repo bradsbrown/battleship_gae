@@ -149,7 +149,7 @@ class ActiveGamesForm(messages.Message):
 class InsertShipForm(messages.Message):
     '''Used to add a new ship to player board'''
     player_name = messages.StringField(1, required=True)
-    opponent_name = messages.StringField(2, required=True)
+    urlsafe_game_key = messages.StringField(2, required=True)
     start_x = messages.IntegerField(3, required=True)
     start_y = messages.IntegerField(4, required=True)
     length = messages.IntegerField(5, required=True)

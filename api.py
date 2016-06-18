@@ -40,8 +40,8 @@ PLAYER_REQUEST = endpoints.ResourceContainer(
                         user_name=messages.StringField(1))
 
 SHIP_COORDS_REQUEST = endpoints.ResourceContainer(
-                        player_name=messages.StringField(1),
-                        opponent_name=messages.StringField(2))
+                        urlsafe_game_key=messages.StringField(1),
+                        player_name=messages.StringField(2),)
 
 GRID_SIZE = 10
 
@@ -150,8 +150,9 @@ class BattleshipApi(remote.Service):
         if player.key == game.player_2:
             opponent = User.query(User.key == game.player_1).get()
 
-        board = get_by_players(player.key, opponent.key, 'Board')
-
+        g_key = request.urlsafe_game_key
+        board = Board.query(ndb.AND(Board.player == opponent.key,
+                                    Board.urlsafe_game_key == g_key)).get()
         if player.key != game.next_player:
             return board.to_form(message="It's not your turn yet!")
 
@@ -219,10 +220,9 @@ class BattleshipApi(remote.Service):
     def insert_ship(self, request):
         '''Adds a new ship to player's board'''
         player = User.query(User.user_name == request.player_name).get()
-        opponent = User.query(User.user_name == request.opponent_name).get()
-        board = get_by_players(player.key,
-                               opponent.key,
-                               'Board')
+        g_key = request.urlsafe_game_key
+        board = Board.query(ndb.AND(Board.player == player.key,
+                                    Board.urlsafe_game_key == g_key)).get()
 
         if not board:
             return BoardForm(message='Board not found.')
@@ -285,15 +285,16 @@ class BattleshipApi(remote.Service):
 
     @endpoints.method(request_message=SHIP_COORDS_REQUEST,
                       response_message=CoordsForm,
-                      path='board/{player_name}/{opponent_name}/coords',
+                      path='board/{urlsafe_game_key}/{player_name}/coords',
                       name='get_ship_coords',
                       http_method='GET')
     def get_ship_coords(self, request):
         '''Given a player and opponent name, returns the player's
         list of ships on the game board'''
         player = User.query(User.user_name == request.player_name).get()
-        opponent = User.query(User.user_name == request.opponent_name).get()
-        board = get_by_players(player.key, opponent.key, 'Board')
+        g_key = request.urlsafe_game_key
+        board = Board.query(ndb.AND(Board.player == player.key,
+                                    Board.urlsafe_game_key == g_key)).get()
         return CoordsForm(coord=[coord for coord in board.ship_coord])
 
     @endpoints.method(request_message=URLSAFE_GAME_REQUEST,

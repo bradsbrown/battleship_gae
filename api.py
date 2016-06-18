@@ -14,12 +14,11 @@ from models import (
     CoordsForm,
     PlayerStatsForm,
     PlayersStatsForm,
-    GetCoordsForm,
     ActiveGamesForm,
     GameForm,
     GameHistoryForm)
 
-from utils import get_by_urlsafe, get_by_players
+from utils import get_by_urlsafe
 
 NEW_GAME_REQUEST = endpoints.ResourceContainer(NewGameForm)
 
@@ -130,6 +129,11 @@ class BattleshipApi(remote.Service):
     def cancel_game(self, request):
         '''Allows cancellation of a game before it has been won'''
         game = get_by_urlsafe(request.urlsafe_game_key, Game)
+
+        # validate game is still in play before canceling
+        if game.game_over:
+            raise endpoints.BadRequestException("Game is already over!")
+
         game.game_over = True
         game.winner = 'CANCELED'
         game.put()
@@ -314,8 +318,9 @@ class BattleshipApi(remote.Service):
                       http_method='GET')
     def get_user_games(self, request):
         '''Returns a list of data for all a player's in-progress games'''
-        games = Game.query(ndb.OR(Game.player_1 == request.user_name,
-                                  Game.player_2 == request.user_name))
+        player = User.query(User.user_name == request.user_name).get()
+        games = Game.query(ndb.OR(Game.player_1 == player.key,
+                                  Game.player_2 == player.key))
         games = games.filter(Game.game_over == False).fetch()
         return ActiveGamesForm(items=[game.to_form() for game in games])
 

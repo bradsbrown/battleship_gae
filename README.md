@@ -75,7 +75,7 @@ Battleship does not keep an in-game 'score'. The end record of a game is simply 
 - **insert_ship**
   - Path: 'board/insert_ship'
   - Method: PUT
-  - parameters: player_name, opponent_name, horizontal (boolean), start_x, start_y, length
+  - parameters: player_name, urlsafe_game_key, horizontal (boolean), start_x, start_y, length
   - Generates a ship with described characteristics on player board. Validates that the ship is entirely on the board (doesn't run over), that the ship doesn't overlap other ships, then inserts it onto the player board.
 
 - **player_stats**
@@ -91,7 +91,7 @@ Battleship does not keep an in-game 'score'. The end record of a game is simply 
   - Description: Returns PlayersStatsForm ranking all users by win percentage
 
 - **get_ship_coords**
-  - Path:'board/<player_name>/<opponent_name>/coords'
+  - Path:'board/<urlsafe_game_key>/<player_name>/coords'
   - Method: GET
   - parameters: none
   - Description: returns CoordsForm listing ship cells from player's board.

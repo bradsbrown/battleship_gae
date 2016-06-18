@@ -9,3 +9,17 @@ on top of the endpoints I've laid out.
 
 At the very least, I think I have a much better understanding of how to
 set up a working API system in GAE, and could do so again if necessary.
+
+As I worked on this, I had to build up the models:
+- The big addition to Game was the moves property, which made me learn
+  how to manage a repeated property in ndb.
+- Similarly, I added hit_coord and miss_coord to Board, which required
+  the same pieces of knowledge.
+- For User, the challenge was learning to use and write a ComputedProperty.
+
+The major trade-off I struggled with was balancing usability (measured by
+how much unique data, especially obscure key strings) was required to manage
+the game, versus fidelity - ensuring the right game or board was returned
+for each API call. I finally settled around a model that works with the
+urlsafe_game_key wherever necessary, and uses plaintext user names for
+any other identifying information necessary.
